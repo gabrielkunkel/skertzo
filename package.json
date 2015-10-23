@@ -1,0 +1,28 @@
+{
+  "name": "skertzo",
+  "version": "1.0.0",
+  "description": "This is a framework I'm building for frontend development, similar to Ember, React-Flux, and Angular.",
+  "main": "index.js",
+  "scripts": {
+    "test": "run test"
+  },
+  "keywords": [
+    "framework",
+    "library"
+  ],
+  "author": "gabrielkunkel",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^1.7.2",
+    "jasmine-core": "^2.3.4",
+    "karma": "^0.13.11",
+    "karma-jasmine": "^0.3.6",
+    "karma-phantomjs-launcher": "^0.2.1",
+    "phantomjs": "^1.9.18",
+    "sinon": "^1.17.1"
+  },
+  "dependencies": {
+    "jquery": "^2.1.4",
+    "lodash": "^3.10.1"
+  }
+}

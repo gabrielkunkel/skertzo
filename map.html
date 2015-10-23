@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>tile test</title>
+
+    <style>
+        body, div
+        {
+            background: #000000;
+            color: #ffffff;
+            font-size: x-large;
+            font-family: monospace;
+        }
+    </style>
+
+</head>
+<body onkeydown="KeyboadHandler(event)">
+
+<div id="gamemap"><div>
+
+
+    <script>
+        ///////////////////////////////////////////
+        // Tile Test - Tile Definitions
+        ///////////////////////////////////////////
+        OPENTILE = ".";
+        WALLTILE = "#";
+        PLAYERTILE = "@";
+
+        /////
+        // Not Traversable Tile List
+
+        NOTTRAVERSABLE = new Array();
+
+        // add tiles here
+        NOTTRAVERSABLE.push(WALLTILE);
+
+
+        function IsNotTraversible(value, array)
+        {
+            return array.indexOf(value) > -1;
+        }
+        ///////////////////////////////////////////
+
+
+        ///////////////////////////////////////////
+        // Tile Test - Functions
+        ///////////////////////////////////////////
+        function rollDie(sides)
+        {
+            sides = sides || 6;
+            var floor = Math.floor;
+            var random = Math.random;
+
+            return 1 + floor(random() * sides);
+        }
+
+
+
+        function MovePlayer(direction, currentRow, currentCol)
+        {
+            Row = currentRow;
+            Col = currentCol;
+
+            if(direction == "UP") {Row = currentRow-1;}
+            if(direction == "DOWN") {Row = currentRow+1;}
+            if(direction == "LEFT") {Col = currentCol-1;}
+            if(direction == "RIGHT") {Col = currentCol+1;}
+
+            if(!IsNotTraversible(mapgrid[Row][Col], NOTTRAVERSABLE))
+            {
+                mapgrid[currentRow][currentCol] = currenttilevalue;  // Reset the old tile to its stored state
+                currenttilevalue = mapgrid[Row][Col]; // Get the Tile of where we will place the player
+                mapgrid[Row][Col] = PLAYERTILE; // replace the map tile with the player tile
+
+                playerRow = Row;
+                playerCol = Col;
+            }
+        }
+
+
+
+
+        function KeyboadHandler(e)
+        {
+            e = e || window.event;
+
+            e.preventDefault();
+
+            var code = e.keyCode;
+            ///////////////////////////////////////////////
+            // Movement
+            ///////////////////////////////////////////////
+            //37 - left
+            if(code == 37){MovePlayer("LEFT", playerRow, playerCol);}
+            //38 - up
+            if(code == 38){MovePlayer("UP", playerRow, playerCol);}
+            //39 - right
+            if(code == 39){MovePlayer("RIGHT", playerRow, playerCol);}
+            //40 - down
+            if(code == 40){MovePlayer("DOWN", playerRow, playerCol);}
+
+            ///////////////////////////////////////////////
+            // Menus
+            ///////////////////////////////////////////////
+
+            ///////////////////////////////////////////////
+            // Other
+            ///////////////////////////////////////////////
+
+            // lastly redrawMap
+            PrintMap(mapgrid);            // Show it // Player moved redraw map
+
+        }
+
+
+
+        // Initialize an array as a map full of zeros
+        // example: mapgrid = CreateEmptyMap(rows, columns);
+        function CreateEmptyMap(rows, columns)
+        {
+            // build out array and populate with 0's
+            var mapgrid = new Array();
+            for (i=0; i < rows; i++)
+            {
+                mapgrid[i] = new Array();
+                for (n=0; n < columns; n++)
+                {
+                    mapgrid[i][n] = OPENTILE;
+                }
+            }
+
+            return mapgrid;
+        }
+
+        // Print the specified map array
+        // example: PrintMap(mapgrid);
+        function PrintMap(arr)
+        {
+
+            rows = arr.length;
+            columns = arr[0].length;
+
+            // print map
+            var output = "";
+            for (i=0; i < rows; i++)
+            {
+                for (n=0; n < columns; n++)
+                {
+                    if(arr[i][n] == WALLTILE){output += "<span style='color: red'>" + arr[i][n] + "</span>";}
+                    else{output += arr[i][n];}
+                }
+                output += "<br/>";
+            }
+            document.getElementById("gamemap").innerHTML = output;
+        }
+
+        // Dynamic Room Test
+        // example: CreateRoom(arr, 1, 1, 4, 4, true, true, true, true);   // Build 4x4 room at [1][1] + add door to all four cardinals
+        function CreateRoom(arr, startrow, startcol, roomwidth, roomheight, northdoor, southdoor, eastdoor, westdoor)
+        {
+            rows = arr.length;
+            columns = arr[0].length;
+
+
+            // make room width not divisible by 2 so that a door can be placed center of North or South
+            temp = roomwidth % 2;
+            while (temp != 1)
+            {
+                roomwidth++;
+                temp = roomwidth % 2;
+            }
+
+            // make room height not divisible by 2 so that a door can be placed center of East or West
+            temp = roomheight % 2;
+            while (temp != 1)
+            {
+                roomheight++;
+                temp = roomheight % 2;
+            }
+
+            // get door positions
+            nsdoorposition = Math.floor(roomwidth/2);
+            ewdoorposition = Math.floor(roomheight/2);
+
+            // North & South
+            for(nscol = startcol; nscol <= roomwidth; nscol++)
+            {
+                arr[startcol][nscol] = WALLTILE;
+                arr[startcol + roomheight][nscol] = WALLTILE;
+            }
+
+            // East & West
+            for(ewrow = startrow; ewrow <= (roomheight + 1); ewrow++)
+            {
+                arr[ewrow][startrow] = WALLTILE;
+                arr[ewrow][startrow + roomwidth] = WALLTILE;
+            }
+
+            // Add Doors
+            if(northdoor == true){arr[startrow][startcol + nsdoorposition] = OPENTILE;}
+            if(southdoor == true){arr[startrow + roomheight][startcol + nsdoorposition] = OPENTILE;}
+
+            if(eastdoor == true){arr[startrow + ewdoorposition][startrow] = OPENTILE;}
+            if(westdoor == true){arr[startrow + ewdoorposition][startrow + roomwidth] = OPENTILE;}
+        }
+
+        function CreateBuildingInterior(arr, numberofrooms)
+        {
+            for (i = 0; i < numberofrooms; i++)
+            {
+                CreateRoom(arr, 1,1,rollDie()+(rollDie(6)+5) - rollDie(6), rollDie()+5, + rollDie() + 3, 1, 1, 1, 1);   // Build room
+
+            }
+        }
+
+        function BuildMapData(arr, type)
+        {
+            if (type == "building-interior")
+            {
+                CreateBuildingInterior(arr, rollDie(6)+5);   // Create Building
+            }
+        }
+
+
+        ///////////////////////////////////////////
+        // Tile Test - Code
+        ///////////////////////////////////////////
+
+
+        mapgrid = CreateEmptyMap( 25, 30);    // Create an Empty Map array of open spaces
+
+        BuildMapData(mapgrid, "building-interior");  // Build Map Data
+
+        ///////////////////////////////////////
+        // Current position of player
+        playerRow = 0;
+        playerCol = 0;
+        currenttilevalue = mapgrid[playerRow][playerCol]; // Get the Tile of where we will place the player
+        mapgrid[playerRow][playerCol] = PLAYERTILE; // replace the map tile with the player tile
+        ///////////////////////////////////////
+
+        PrintMap(mapgrid);            // Show it // Player moved redraw map
+
+        ////////////////////////
+
+
+    </script>
+
+
+</body>
+</html>
