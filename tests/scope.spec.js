@@ -71,6 +71,74 @@ describe("The $scope object class", function() {
 
     });
 
+    it("calls the listenerFn when the watch value is first undefined", function() {
+      scope.counter = 0;
+
+      scope.$watch(
+        function(scope) { return scope.someValue; },
+        function(newValue, oldValue, scope) { scope.counter++; }
+      );
+
+      scope.$digest();
+
+      expect(scope.counter).toBe(1);
+    });
+    
+    it("may have watchers that omit the listener function", function() {
+      var watchFn = jasmine.createSpy().and.returnValue('(value from watchFn)');
+      scope.$watch(watchFn);
+
+      scope.$digest();
+
+      expect(watchFn).toHaveBeenCalled();
+    });
+
+    // my own test to clarify something about JavaScript
+    it("adds new value onto the scope by adding one through a watchFn", function() {
+
+      scope.$watch(
+        function(scope) {
+          /* eslint no-return-assign: 1 */
+          return scope.thisValueExists = 5;
+        }
+      );
+
+      scope.$digest();
+
+      expect(scope.thisValueExists).toBe(5);
+
+    });
+
+    it("triggers chained watchers in the same digest", function () {
+      scope.name = 'Jane';
+
+      scope.$watch(
+        function(scope) { return scope.nameUpper; },
+        function (newValue, oldValue, scope) {
+          if (newValue) {
+            scope.initial = newValue.substring(0, 1) + '.';
+          }
+        }
+      ); //end of scope.$watch
+
+      scope.$watch(
+        function(scope) { return scope.name; },
+        function (newValue, oldValue, scope) {
+          /* eslint eqeqeq: 1 */
+          if (newValue) {
+            scope.nameUpper = newValue.toUpperCase();
+          }
+        }
+      ); //end of scope.$watch
+
+      scope.$digest();
+      expect(scope.initial).toBe('J.');
+      scope.name = 'Richard';
+      scope.$digest();
+      expect(scope.initial).toBe('R.');
+
+    }); //end it
+
   });
 
 });

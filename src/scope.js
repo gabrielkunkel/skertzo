@@ -3,6 +3,9 @@
  */
 "use strict";
 
+// this is just a plain, useless, empty function to be used as a value placeholder
+function initWatchVal() {}
+
 //Scoped!
 /**
  * @description The Scope constructor will be used to create an object
@@ -12,6 +15,7 @@
  */
 function Scope() {
   this.$$watchers = [];
+
 }
 
 //$watched!
@@ -33,7 +37,8 @@ Scope.prototype.$watch = function (watchFn, listenerFn) {
    */
   var watcher = {
     watchFn: watchFn,
-    listenerFn: listenerFn
+    listenerFn: listenerFn || function() {},
+    last: initWatchVal
   };
   this.$$watchers.push(watcher);
 };
@@ -44,11 +49,27 @@ Scope.prototype.$watch = function (watchFn, listenerFn) {
  * Put another way, the $digest method cycles through the $$watchers array of
  * objects, and runs each of their listener functions (listenerFn's).
  */
-Scope.prototype.$digest = function () {
+Scope.prototype.$$digestOnce = function () {
   var self = this;
-  _.forEach(this.$$watchers, function (watcher) {
-    watcher.watchFn(self);
-    watcher.listenerFn();
-  });
+  var newValue, oldValue, dirty;
 
+  _.forEach(this.$$watchers, function (watcher) {
+    newValue = watcher.watchFn(self);
+    oldValue = watcher.last;
+    if (newValue !== oldValue) {
+      watcher.last = newValue;
+      watcher.listenerFn(newValue,
+        oldValue === initWatchVal ? newValue : oldValue,
+        self);
+      dirty = true;
+    }
+  });
+  return dirty;
+}; //end $$digestOnce
+
+Scope.prototype.$digest = function () {
+  var dirty;
+  do {
+    dirty = this.$$digestOnce();
+  } while (dirty);
 };

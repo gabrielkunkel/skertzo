@@ -140,7 +140,7 @@
 
     ////////// Variables //////////
 
-    "init-declarations": [2, "always"], //Enforce/Disallow Variable Initializations, "always" means always initialize when you declare
+    "init-declarations": 0, //Enforce/Disallow Variable Initializations, "always" means always initialize when you declare
     "no-catch-shadow": 0,             //the catch clause parameter name being the same as a variable in the outer scope (off by default in the node environment)
     "no-delete-var": 2,               //deletion of variables
     "no-label-var": 2,                //labels that share a name with a variable
