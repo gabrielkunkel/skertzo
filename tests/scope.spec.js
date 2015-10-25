@@ -280,7 +280,7 @@ describe("The $scope object class", function() {
       expect(result).toBe(42);
     }); //end it
     
-    it("passes the second $eval argument straight through", function() {
+    it("passes the second $eval argument straight through to be evaluated", function() {
       var result;
 
       scope.aValue = 42;
@@ -299,6 +299,122 @@ describe("The $scope object class", function() {
     }); //end it
   }); //end describe
 
+  describe("scope's $apply", function() {
+    var scope = {};
+
+    beforeEach(function () {
+      scope = new Scope();
+    });
+
+    it("executes $apply'ed function and starts the $digest", function() {
+      scope.aValue = 'weAreTheKnightsWhoSay';
+      scope.counter = 0;
+
+      scope.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.counter += 1; }
+      );
+
+      //expect 1
+      scope.$digest();
+      expect(scope.counter).toBe(1);
+
+      //expect 2
+      scope.$apply(function (scope) {
+        scope.aValue = 'yourMotherWasAHamsterAndYourFatherSmelledOfElderberries';
+      });
+      expect(scope.counter).toBe(2);
+    }); //end it
+  }); //end describe
+
+  describe("scope's $evalAsync", function() {
+    var scope = {};
+
+    beforeEach(function () {
+      scope = new Scope();
+    });
+
+    it("executes $evalAsync'ed function later in the same cycle", function() {
+      scope.aValue = [1, 2, 3];
+      scope.asyncEvaluated = false;
+      scope.asyncEvaluatedImmediately = false;
+
+      scope.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) {
+          scope.$evalAsync(function(scope) {
+            scope.asyncEvaluated = true; //we want this to be delayed
+          });
+          scope.asyncEvaluatedImmediately = scope.asyncEvaluated; //this should be false
+        }
+      );
+
+      scope.$digest();
+      expect(scope.asyncEvaluated).toBe(true);
+      expect(scope.asyncEvaluatedImmediately).toBe(false);
+    }); //end it
+    
+    it("executes $evalAsync'ed functions added by watch functions", function() {
+      scope.aValue = [1, 2, 3];
+      scope.asyncEvaluated = false;
+
+      scope.$watch(
+        function(scope) {
+          if(!scope.asyncEvaluated === true) {
+            scope.$evalAsync(function (scope) {
+              scope.asyncEvaluated = true;
+            });
+          }
+          return scope.aValue;
+        },
+        function(newValue, oldValue, scope) { }
+      );
+
+      scope.$digest();
+
+      expect(scope.asyncEvaluated).toBe(true);
+    }); //end it
+
+    it("executes $evalAsync'ed function even when not dirty", function() {
+      scope.aValue = [1, 2, 3];
+      scope.asyncEvaluatedTimes = 0;
+
+      scope.$watch(
+        function(scope) {
+          if(scope.asyncEvaluatedTimes < 2) {
+            scope.$evalAsync(function (scope) {
+              scope.asyncEvaluatedTimes += 1;
+          });
+          }
+          return scope.aValue;
+        },
+        function(newValue, oldValue, scope) { }
+      );
+
+      scope.$digest();
+
+      expect(scope.asyncEvaluatedTimes).toBe(2);
+
+
+    }); //end it
+
+    it("eventually halts $evalAsyncs added by watches, preventing infinite loops", function() {
+      scope.aValue = [1, 2, 3];
+      
+      scope.$watch(
+        function(scope) {
+          scope.$evalAsync(function(scope) { });
+          return scope.aValue;
+        },
+        function(newValue, oldValue, scope) { }
+      );
+
+      expect(function() { scope.$digest(); }).toThrow();
+      
+      
+    }); //end it
+
+  }); //end describe
 
 
 });

@@ -16,6 +16,7 @@ function initWatchVal() {}
 function Scope() {
   this.$$watchers = [];
   this.$$lastDirtyWatch = null;
+  this.$$asyncQueue = [];
 
 }
 
@@ -25,7 +26,7 @@ function Scope() {
  * to the $$watchers array. It will be this array that the $digest
  * method will loop over in order to scan for changes in scope values.
  *
- * @param {Function} watchFn
+ * @param {Function} watchFn - these should be side effect free
  * @param {Function} listenerFn
  * @param {Boolean} valueEq
  */
@@ -62,6 +63,7 @@ Scope.prototype.$$digestOnce = function () {
   _.forEach(this.$$watchers, function (watcher) {
     newValue = watcher.watchFn(self);
     oldValue = watcher.last;
+
     if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
       self.$$lastDirtyWatch = watcher;
       watcher.last = watcher.valueEq === true ? _.cloneDeep(newValue) : newValue;
@@ -80,16 +82,34 @@ Scope.prototype.$$digestOnce = function () {
 
 Scope.prototype.$digest = function () { //TODO: combine $$digestOnce and $$digest in one function
   var timeToLive = 7; // "The ttl"
-  var dirty;
+  var dirty, asyncTask;
   this.$$lastDirtyWatch = null;
   do {
+    while (this.$$asyncQueue.length) {
+      asyncTask = this.$$asyncQueue.shift();
+      asyncTask.scope.$eval(asyncTask.expression);
+      //tried this as 'this.$eval(asyncTask.expression);' and it still works
+      //currently we pass the intended scope as 'this' from $$asyncQueue as
+      //saved by $evalAsync.
+    }
+
     dirty = this.$$digestOnce();
-    if (dirty && !(timeToLive -= 1)) {
+    if (dirty || this.$$asyncQueue.length && !(timeToLive -= 1)) { //this section prevents infinite loops
       throw '7 $digest iterations reached';
     }
-  } while (dirty);
+  } while (dirty || this.$$asyncQueue.length); //this makes sure the $digest continues to run until all values have been updated
 };
 
+/**
+ * @description With the help of lodash we're going to test if two values
+ * are deeply equivalent. This is especially a concern for arrays and objects.
+ * We'll also check if they're equivalent if they're simple values or NaN's.
+ *
+ * @param newValue
+ * @param oldValue
+ * @param valueEq
+ * @returns {Boolean}
+ */
 Scope.prototype.$$areEqual = function (newValue, oldValue, valueEq) {
   if (!!valueEq === true) {
     return _.isEqual(newValue, oldValue);
@@ -106,7 +126,28 @@ Scope.prototype.$$areEqual = function (newValue, oldValue, valueEq) {
   }
 }; //end $$areEqual
 
-Scope.prototype.$eval = function (fn, optionalArg) {
-   return fn(this, optionalArg);
-
+/**
+ * @description $eval runs a function with the scope that's been passed in
+ * as an argument.
+ *
+ * @param {Function} expr
+ * @param optionalArg
+ * @returns {*}
+ */
+Scope.prototype.$eval = function (expr, optionalArg) {
+   return expr(this, optionalArg);
 };
+
+Scope.prototype.$apply = function(expr) {
+  try {
+    return this.$eval(expr);
+  }
+  finally {
+    this.$digest();
+  }
+};
+
+Scope.prototype.$evalAsync = function (expr) {
+  this.$$asyncQueue.push({scope: this, expression: expr});
+};
+
