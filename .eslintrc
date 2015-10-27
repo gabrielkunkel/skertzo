@@ -109,8 +109,8 @@
     "no-multi-spaces": 2,       // [FIXABLE] use of multiple spaces
     "no-multi-str": 0,          //use of multiline strings
     "no-native-reassign": 0,    //reassignments of native objects
-    "no-new": 0,                //use of new operator when not part of the assignment or comparison
-    "no-new-func": 0,           //use of new operator for Function object
+    "no-new": 2,                //use of new operator when not part of the assignment or comparison
+    "no-new-func": 2,           //use of new operator for Function object
     "no-new-wrappers": 0,       // disallows creating new instances of String, Number, and Boolean
     "no-octal": 0,              //use of octal literals
     "no-octal-escape": 0,       //use of octal escape sequences in string literals, such as var foo = "Copyright \251";
@@ -124,7 +124,7 @@
     "no-unused-expressions": 0, //usage of expressions in statement position
     "no-void": 0,               //use of void operator (off by default)
     "no-warning-comments": 0,   //usage of configurable warning terms in comments, e.g. TODO or FIXME (off by default)
-    "no-with": 0,               //use of the with statement
+    "no-with": 2,               //use of the with statement
     "radix": 0,                 // require use of the second argument for parseInt() (off by default)
     "vars-on-top": 2,           // requires to declare all vars on top of their containing scope (off by default)
     "wrap-iife": 0,             // require immediate function invocation to be wrapped in parentheses (off by default)

@@ -17,6 +17,11 @@ function Scope() {
   this.$$watchers = [];
   this.$$lastDirtyWatch = null;
   this.$$asyncQueue = [];
+  this.$$applyAsyncQueue = [];
+  this.$$applyAsyncId = null;
+  this.$$postDigestQueue = [];
+  this.$$phase = null;
+
 
 }
 
@@ -40,7 +45,7 @@ Scope.prototype.$watch = function (watchFn, listenerFn, valueEq) {
    */
   var watcher = {
     watchFn: watchFn,
-    listenerFn: listenerFn || function() {},
+    listenerFn: listenerFn || function() { },
     valueEq: !!valueEq,
     last: initWatchVal
   };
@@ -64,7 +69,7 @@ Scope.prototype.$$digestOnce = function () {
     newValue = watcher.watchFn(self);
     oldValue = watcher.last;
 
-    if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
+    if(!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
       self.$$lastDirtyWatch = watcher;
       watcher.last = watcher.valueEq === true ? _.cloneDeep(newValue) : newValue;
       watcher.listenerFn(newValue,
@@ -81,9 +86,19 @@ Scope.prototype.$$digestOnce = function () {
 }; //end $$digestOnce
 
 Scope.prototype.$digest = function () { //TODO: combine $$digestOnce and $$digest in one function
-  var timeToLive = 7; // "The ttl"
+  var timeToLive = 7; // "The ttl" ...for how long two watchFn's can call each other before it throws
   var dirty, asyncTask;
+
   this.$$lastDirtyWatch = null;
+  this.$beginPhase("$digest"); // UPDATE $$PHASE
+
+  // RUN APPLY ASYNC QUEUED STUFF NOW
+  if (this.$$applyAsyncId) {
+    clearTimeout(this.$$applyAsyncId);
+    this.$$flushApplyAsync();
+  }
+
+  //ASYNC QUEUE
   do {
     while (this.$$asyncQueue.length) {
       asyncTask = this.$$asyncQueue.shift();
@@ -93,11 +108,23 @@ Scope.prototype.$digest = function () { //TODO: combine $$digestOnce and $$diges
       //saved by $evalAsync.
     }
 
+    //REGULAR QUEUE
     dirty = this.$$digestOnce();
-    if (dirty || this.$$asyncQueue.length && !(timeToLive -= 1)) { //this section prevents infinite loops
+
+    //CHECK FOR ENDLESS LOOPS
+    //the parenthesis around 'dirty || this.$$asyncQueue.length' is necessary
+    if ((dirty || this.$$asyncQueue.length) && !(timeToLive -= 1)) { //this section prevents infinite loops
+      //if after you process '!(timeToLive -= 1)' it comes up '!(0)' then it's true and throws the error
+      this.$clearPhase();
       throw '7 $digest iterations reached';
     }
   } while (dirty || this.$$asyncQueue.length); //this makes sure the $digest continues to run until all values have been updated
+  this.$clearPhase();
+
+  while(this.$$postDigestQueue.length) {
+    this.$$postDigestQueue.shift()();
+  }
+
 };
 
 /**
@@ -140,14 +167,95 @@ Scope.prototype.$eval = function (expr, optionalArg) {
 
 Scope.prototype.$apply = function(expr) {
   try {
+    this.$beginPhase("$apply");
     return this.$eval(expr);
   }
   finally {
+    this.$clearPhase();
     this.$digest();
   }
 };
 
+/**
+ * @kind Method
+ * @description Schedules a function to run at the end of all other $digest operations.
+ * It can schedule a $digest run, if one isn't ongoing. The preferred way to do this in
+ * production code is to use $applyAsync.
+ *
+ * @param expr
+ */
 Scope.prototype.$evalAsync = function (expr) {
+  var self = this;
+  if(!self.$$phase && self.$$asyncQueue.length === 0) {
+    setTimeout(function () {
+      if (self.$$asyncQueue.length > 0) {
+        self.$digest();
+      }
+    }, 0);
+  }
   this.$$asyncQueue.push({scope: this, expression: expr});
 };
 
+/**
+ * @description adds the phase in string form to $$phase.
+ *
+ * @param {String} phase
+ */
+Scope.prototype.$beginPhase = function (phase) {
+  if (this.$$phase) {
+    throw this.$$phase + ' already in progress.';
+  }
+  this.$$phase = phase;
+};
+
+Scope.prototype.$clearPhase = function () {
+  this.$$phase = null;
+};
+
+/**
+ * @description
+ * @param expr
+ */
+Scope.prototype.$applyAsync = function (expr) {
+  var self = this;
+  var functionToRun;
+
+  self.$$applyAsyncQueue.push(function() {
+    self.$eval(expr);
+  });
+
+  if (self.$$applyAsyncId === null) {
+    self.$$applyAsyncId = setTimeout(function() {
+      self.$apply(_.bind(self.$$flushApplyAsync, self));
+
+
+/*    **This section's functionality has been moved to $$flushApplyAsync**
+
+      self.$apply(function() {
+        while (self.$$applyAsyncQueue.length > 0) {
+          functionToRun = self.$$applyAsyncQueue.shift();
+          //Alternative Solution: Eliminate functionToRun for double-call:
+          // 'self.$$applyAsyncQueue.shift()()'
+          functionToRun();
+        }
+        self.$$applyAsyncId = null;
+      });
+*/
+
+    }, 0);
+  }
+};
+
+Scope.prototype.$$flushApplyAsync = function () {
+  var functionToRun;
+
+  while(this.$$applyAsyncQueue.length) {
+    functionToRun = this.$$applyAsyncQueue.shift();
+    functionToRun();
+  }
+  this.$$applyAsyncId = null;
+};
+
+Scope.prototype.$$postDigest = function (fn) {
+  this.$$postDigestQueue.push(fn);
+};
