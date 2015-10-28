@@ -641,8 +641,111 @@ describe("The $scope object class", function() {
       expect(scope.watchedValue).toBe('changed value');
 
     }); //end it
+  }); //end describe
 
+  describe("exception handling", function() {
+    var scope = {};
 
+    beforeEach(function () {
+      scope = new Scope();
+    });
+
+    it("catches exceptions in watchFn's and continues", function() {
+      scope.aValue = 'Why are we here? What\'s life all about?';
+      scope.counter = 0;
+
+      scope.$watch(
+        function(scope) { throw "WatchFn Error"; }, // TODO: Explore... Can you... Would you ever put a throw in a return statement?
+        function(newValue, oldValue, scope) { }
+      );
+
+      scope.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.counter += 1; }
+      );
+
+      scope.$digest();
+      expect(scope.counter).toBe(1);
+    }); //end it
+
+    it("catches exceptions in listenerFn's and continues", function() {
+      scope.aValue = 'Is God really here? ...or is there some doubt?';
+      scope.counter = 0;
+
+      scope.$watch(
+        function(scope) { return scope.aValue; }, // TODO: Explore... Can you... Would you ever put a throw in a return statement?
+        function(newValue, oldValue, scope) {
+          throw "ListenerFn Error";
+        }
+      );
+
+      scope.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.counter += 1; }
+      );
+
+      scope.$digest();
+      expect(scope.counter).toBe(1);
+    }); //end it
     
+    it("is active in $evalAsync to allow the $digest loop to keep running", function(done) {
+      scope.counter = 0;
+      scope.aValue = 'Be careful everyone. Look out for the killer cars!';
+
+      scope.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.counter += 1; }
+      );
+
+      scope.aFunction = function (scope) {
+        throw 'Error';
+      };
+
+      scope.$evalAsync(scope.aFunction);
+
+      scope.$digest();
+
+      setTimeout(function () {
+        expect(scope.counter).toBe(1);
+        done();
+      }, 50);
+    }); //end it
+
+    it("catches exceptions in $applyAsync", function(done) {
+
+      scope.$applyAsync(function (scope) {
+        throw "Error";
+      });
+
+      scope.$applyAsync(function (scope) {
+        throw "Error";
+      });
+
+      scope.$applyAsync(function (scope) {
+        scope.applied = true;
+      });
+
+      setTimeout(function () {
+        expect(scope.applied).toBe(true);
+        done();
+      }, 50);
+    }); //end it
+
+    it("catches exceptions in $$postDigest", function() {
+      var didRun = 'The Ministry of Silly Walks';
+
+      scope.$$postDigest(function () {
+        throw 'Error';
+      });
+
+      scope.$$postDigest(function (scope) {
+        didRun = 'He\'s not the messiah. He\'s a very naughty boy!';
+      });
+
+      scope.$digest();
+
+      expect(didRun).toBe('He\'s not the messiah. He\'s a very naughty boy!');
+    }); //end it
+
   }); //end describe
 });

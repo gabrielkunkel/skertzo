@@ -66,19 +66,25 @@ Scope.prototype.$$digestOnce = function () {
   var newValue, oldValue, dirty;
 
   _.forEach(this.$$watchers, function (watcher) {
-    newValue = watcher.watchFn(self);
-    oldValue = watcher.last;
 
-    if(!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
-      self.$$lastDirtyWatch = watcher;
-      watcher.last = watcher.valueEq === true ? _.cloneDeep(newValue) : newValue;
-      watcher.listenerFn(newValue,
-        oldValue === initWatchVal ? newValue : oldValue,
-        self);
-      dirty = true;
-    }
-    else if (self.$$lastDirtyWatch === watcher) {
-      return false;
+    try {
+      newValue = watcher.watchFn(self);
+      oldValue = watcher.last;
+
+      if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
+        self.$$lastDirtyWatch = watcher;
+        watcher.last = watcher.valueEq === true ? _.cloneDeep(newValue) : newValue;
+        watcher.listenerFn(newValue,
+          oldValue === initWatchVal ? newValue : oldValue,
+          self);
+        dirty = true;
+      }
+      else if (self.$$lastDirtyWatch === watcher) {
+        return false;
+      }
+    } //end of try
+    catch (e) {
+      console.error(e);
     }
   });
   return dirty;
@@ -93,6 +99,7 @@ Scope.prototype.$digest = function () { //TODO: combine $$digestOnce and $$diges
   this.$beginPhase("$digest"); // UPDATE $$PHASE
 
   // RUN APPLY ASYNC QUEUED STUFF NOW
+
   if (this.$$applyAsyncId) {
     clearTimeout(this.$$applyAsyncId);
     this.$$flushApplyAsync();
@@ -101,12 +108,16 @@ Scope.prototype.$digest = function () { //TODO: combine $$digestOnce and $$diges
   //ASYNC QUEUE
   do {
     while (this.$$asyncQueue.length) {
-      asyncTask = this.$$asyncQueue.shift();
-      asyncTask.scope.$eval(asyncTask.expression);
-      //tried this as 'this.$eval(asyncTask.expression);' and it still works
-      //currently we pass the intended scope as 'this' from $$asyncQueue as
-      //saved by $evalAsync.
+      try {
+        asyncTask = this.$$asyncQueue.shift();
+        asyncTask.scope.$eval(asyncTask.expression);
+      }
+      catch (e) {
+        console.log(e);
+      }
     }
+
+    //TODO: Create a test to see if $evalAsync and $applyAsync *Really* run at the beginning or the end of $digest. I think they run at the beginning. This is how it ends up being postponed. The $digest will finish completely, first. Then the $digest is run again by $evalAsync and $applyAsync (through $apply). This makes sure that any changes caused by $evalAsync or $applyAsync are $digested.
 
     //REGULAR QUEUE
     dirty = this.$$digestOnce();
@@ -121,8 +132,13 @@ Scope.prototype.$digest = function () { //TODO: combine $$digestOnce and $$diges
   } while (dirty || this.$$asyncQueue.length); //this makes sure the $digest continues to run until all values have been updated
   this.$clearPhase();
 
+  //RUN $$POSTDIGEST STUFF
   while(this.$$postDigestQueue.length) {
+    try {
     this.$$postDigestQueue.shift()();
+    } catch (e) {
+      console.error(e);
+    }
   }
 
 };
@@ -186,6 +202,8 @@ Scope.prototype.$apply = function(expr) {
  */
 Scope.prototype.$evalAsync = function (expr) {
   var self = this;
+
+  //schedules a $digest run if there isn't one going
   if(!self.$$phase && self.$$asyncQueue.length === 0) {
     setTimeout(function () {
       if (self.$$asyncQueue.length > 0) {
@@ -193,6 +211,8 @@ Scope.prototype.$evalAsync = function (expr) {
       }
     }, 0);
   }
+
+  //sets up expressions to run
   this.$$asyncQueue.push({scope: this, expression: expr});
 };
 
@@ -218,30 +238,20 @@ Scope.prototype.$clearPhase = function () {
  */
 Scope.prototype.$applyAsync = function (expr) {
   var self = this;
-  var functionToRun;
+  //var functionToRun;
 
+
+  //add it to the Queue
   self.$$applyAsyncQueue.push(function() {
     self.$eval(expr);
   });
 
+  //if there's NOTHING in $$applyAsyncId, add an $apply, wrapped in a setTimeout
+  //this $apply will only run in $digest and the Timeout will be cleared before
+  //it has a chance to initialize.
   if (self.$$applyAsyncId === null) {
     self.$$applyAsyncId = setTimeout(function() {
       self.$apply(_.bind(self.$$flushApplyAsync, self));
-
-
-/*    **This section's functionality has been moved to $$flushApplyAsync**
-
-      self.$apply(function() {
-        while (self.$$applyAsyncQueue.length > 0) {
-          functionToRun = self.$$applyAsyncQueue.shift();
-          //Alternative Solution: Eliminate functionToRun for double-call:
-          // 'self.$$applyAsyncQueue.shift()()'
-          functionToRun();
-        }
-        self.$$applyAsyncId = null;
-      });
-*/
-
     }, 0);
   }
 };
@@ -250,12 +260,20 @@ Scope.prototype.$$flushApplyAsync = function () {
   var functionToRun;
 
   while(this.$$applyAsyncQueue.length) {
-    functionToRun = this.$$applyAsyncQueue.shift();
-    functionToRun();
+    try {
+      functionToRun = this.$$applyAsyncQueue.shift();
+      functionToRun();
+    } catch (e) {
+      console.error(e);
+    }
   }
   this.$$applyAsyncId = null;
 };
 
 Scope.prototype.$$postDigest = function (fn) {
-  this.$$postDigestQueue.push(fn);
+  try {
+    this.$$postDigestQueue.push(fn);
+  } catch (e) {
+    console.error(e);
+  }
 };
