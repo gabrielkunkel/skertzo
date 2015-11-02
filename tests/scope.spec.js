@@ -746,6 +746,273 @@ describe("The $scope object class", function() {
 
       expect(didRun).toBe('He\'s not the messiah. He\'s a very naughty boy!');
     }); //end it
+  }); //end describe
+
+  describe("How to destroy watches", function() {
+    var scope = {};
+
+    beforeEach(function () {
+      scope = new Scope();
+    });
+
+    it("allows destroying a $watch with a removal function", function() {
+      var destroyAValueWatch;
+
+      scope.aValue = 'abc';
+      scope.counter = 0;
+
+      destroyAValueWatch = scope.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.counter += 1; }
+      );
+
+      scope.$digest();
+      expect(scope.counter).toBe(1);
+
+      scope.aValue = 'def';
+      scope.$digest();
+      expect(scope.counter).toBe(2);
+
+      scope.aValue = 'ghi';
+      destroyAValueWatch();
+      scope.$digest();
+      expect(scope.counter).toBe(2);
+    }); //end it
+
+    it("allows destroying a $watch during digest", function() {
+      var watchCalls = [];
+      var destroyWatch;
+
+      scope.aValue = 'Arthur! Arthur, King of the Britains!';
+
+      scope.$watch(
+        function(scope) {
+          watchCalls.push('first');
+          return scope.aValue;
+        }
+      );
+
+      destroyWatch = scope.$watch(
+        function(scope) {
+          watchCalls.push('second');
+          destroyWatch();
+        }
+      );
+
+      scope.$watch(
+        function(scope) {
+          watchCalls.push('third');
+          return scope.aValue;
+        }
+      );
+
+      scope.$digest();
+      expect(watchCalls).toEqual(['first', 'second', 'third', 'first', 'third']);
+
+
+    }); //end it
+
+    it("allows a $watch to destroy another during digest", function() {
+      var destroyWatch;
+
+      scope.aValue = 'Crunchy Frog';
+      scope.counter = 0;
+
+      scope.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { destroyWatch(); }
+      );
+
+      destroyWatch = scope.$watch(
+        function(scope) { },
+        function(newValue, oldValue, scope) { }
+      );
+
+      scope.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.counter += 1; }
+      );
+
+      scope.$digest();
+      expect(scope.counter).toBe(1);
+    }); //end it
+
+    it("allows destroying several $watches during digest", function() {
+      var destroyWatch1, destroyWatch2;
+
+      scope.aValue = 'What is your favorite color?';
+      scope.counter = 0;
+
+      destroyWatch1 = scope.$watch(
+        function(scope) {
+          destroyWatch1();
+          destroyWatch2();
+        }
+      );
+
+      destroyWatch2 = scope.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.counter += 1; }
+      );
+
+      scope.$digest();
+      expect(scope.counter).toBe(0);
+    }); //end it
 
   }); //end describe
+
+  describe("Watching several changes with one listener using $watchGroup", function() {
+    var scope = {};
+
+    beforeEach(function() {
+      scope = new Scope();
+    });
+
+    it("takes watches as an array and calls listener with arrays", function() {
+      var gotNewValues, gotOldValues;
+
+      scope.aValue = 1;
+
+      scope.anotherValue = 2;
+
+      scope.$watchGroup([
+        function(scope) { return scope.aValue; },
+        function(scope) { return scope.anotherValue; }
+      ], function (newValues, oldValues, scope) {
+          gotNewValues = newValues;
+          gotOldValues = oldValues;
+        }
+      ); //end $watchGroup
+      scope.$digest();
+
+      expect(gotNewValues).toEqual([1, 2]);
+      expect(gotOldValues).toEqual([1, 2]);
+    }); //end it
+
+    it("only calls listener once per digest", function() {
+      var counter = 0;
+
+      scope.aValue = 1;
+      scope.anotherValue = 2;
+
+      scope.$watchGroup([
+        function(scope) { return scope.aValue; },
+        function(scope) { return scope.anotherValue; }
+      ],
+        function(newValues, oldValues, scope) {
+          counter += 1;
+        }
+      );
+      scope.$digest();
+
+      expect(counter).toEqual(1);
+    }); //end it
+
+    it("uses the same array of old and new values on first run", function() {
+      var gotNewValues, gotOldValues;
+
+      scope.aValue = 1;
+      scope.anotherValue = 2;
+
+      scope.$watchGroup([
+        function(scope) { return scope.aValue },
+        function(scope) { return scope.anotherValue }
+      ],
+        function(newValues, oldValues, scope) {
+          gotNewValues = newValues;
+          gotOldValues = oldValues;
+        }
+      );
+
+      scope.$digest();
+
+      expect(gotNewValues).toBe(gotOldValues);
+
+    }); //end it
+
+    it("uses different arrays for old and new values on subsequent runs", function() {
+      var gotNewValues, gotOldValues;
+
+      scope.aValue = 1;
+      scope.anotherValue = 2;
+
+      scope.$watchGroup([
+          function(scope) { return scope.aValue },
+          function(scope) { return scope.anotherValue }
+        ],
+        function(newValues, oldValues, scope) {
+          gotNewValues = newValues;
+          gotOldValues = oldValues;
+        }
+      );
+
+      scope.$digest();
+      scope.anotherValue = 3;
+
+      scope.$digest();
+
+      expect(gotNewValues).not.toBe(gotOldValues);
+      expect(gotNewValues).toEqual([1, 3]);
+      expect(gotOldValues).toEqual([1, 2]);
+
+
+    }); //end it
+
+    it("calls the listenerFn at least once, even if the arrays are empty", function() {
+      scope.counter = 0;
+
+      scope.aValue = 1;
+      scope.anotherValue = 2;
+
+      scope.$watchGroup([], //empty array
+        function(newValues, oldValues, scope) {
+          scope.counter += 1;
+        }
+      );
+
+      scope.$digest();
+
+      expect(scope.counter).toBe(1);
+
+    }); //end it
+
+    it("can be de-registered", function() {
+      var counter = 0, destroyGroup;
+
+      scope.aValue = 1;
+      scope.anotherValue = 2;
+
+      destroyGroup = scope.$watchGroup([
+          function(scope) { return scope.aValue; },
+          function(scope) { return scope.anotherValue; }
+        ],
+        function(newValues, oldValues, scope) {
+          counter += 1;
+        }
+      );
+      scope.$digest();
+
+      scope.anotherValue = 3;
+      destroyGroup();
+      scope.$digest();
+
+      expect(counter).toEqual(1);
+    }); //end it
+
+    it("does not call the zero-watch listener when de-registered first", function() {
+      var counter = 0;
+      var destroyGroup = [];
+
+      destroyGroup = scope.$watchGroup([], function (newValues, oldValues, scope) {
+        counter += 1;
+      });
+      destroyGroup();
+      scope.$digest();
+
+      expect(counter).toEqual(0);
+
+    }); //end it
+
+  }); //end describe
+
 });

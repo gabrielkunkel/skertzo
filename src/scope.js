@@ -21,8 +21,6 @@ function Scope() {
   this.$$applyAsyncId = null;
   this.$$postDigestQueue = [];
   this.$$phase = null;
-
-
 }
 
 //$watched!
@@ -30,12 +28,14 @@ function Scope() {
  * @description The $watch method creates an object that gets added
  * to the $$watchers array. It will be this array that the $digest
  * method will loop over in order to scan for changes in scope values.
+ * In order to destroy a watch, just run the returned function.
  *
  * @param {Function} watchFn - these should be side effect free
  * @param {Function} listenerFn
  * @param {Boolean} valueEq
  */
 Scope.prototype.$watch = function (watchFn, listenerFn, valueEq) {
+  var self = this;
 
   /**
    * @property {Object} watcher - Will be added to the scope's $$watchers array
@@ -49,8 +49,17 @@ Scope.prototype.$watch = function (watchFn, listenerFn, valueEq) {
     valueEq: !!valueEq,
     last: initWatchVal
   };
-  this.$$watchers.push(watcher);
+  this.$$watchers.unshift(watcher);
   this.$$lastDirtyWatch = null;
+
+  //a function returned that will remove the applicable watcher when run.
+  return function () {
+    var index = self.$$watchers.indexOf(watcher);
+    if(index >= 0) {
+      self.$$watchers.splice(index, 1);
+      self.$$lastDirtyWatch = null;
+    }
+  };
 };
 
 //$digested!
@@ -65,24 +74,27 @@ Scope.prototype.$$digestOnce = function () {
   var self = this;
   var newValue, oldValue, dirty;
 
-  _.forEach(this.$$watchers, function (watcher) {
+  _.forEachRight(this.$$watchers, function (watcher) {
 
     try {
-      newValue = watcher.watchFn(self);
-      oldValue = watcher.last;
+      if (!!watcher === true) {
+        newValue = watcher.watchFn(self);
+        oldValue = watcher.last;
 
-      if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
-        self.$$lastDirtyWatch = watcher;
-        watcher.last = watcher.valueEq === true ? _.cloneDeep(newValue) : newValue;
-        watcher.listenerFn(newValue,
-          oldValue === initWatchVal ? newValue : oldValue,
-          self);
-        dirty = true;
-      }
-      else if (self.$$lastDirtyWatch === watcher) {
-        return false;
-      }
+        if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
+          self.$$lastDirtyWatch = watcher;
+          watcher.last = watcher.valueEq === true ? _.cloneDeep(newValue) : newValue;
+          watcher.listenerFn(newValue,
+            oldValue === initWatchVal ? newValue : oldValue,
+            self);
+          dirty = true;
+        }
+        else if (self.$$lastDirtyWatch === watcher) {
+          return false;
+        }
+      } //end of if (watcher)
     } //end of try
+
     catch (e) {
       console.error(e);
     }
@@ -98,14 +110,14 @@ Scope.prototype.$digest = function () { //TODO: combine $$digestOnce and $$diges
   this.$$lastDirtyWatch = null;
   this.$beginPhase("$digest"); // UPDATE $$PHASE
 
-  // RUN APPLY ASYNC QUEUED STUFF NOW
+  // RUN $APPLYASYNC QUEUED STUFF NOW
 
   if (this.$$applyAsyncId) {
     clearTimeout(this.$$applyAsyncId);
     this.$$flushApplyAsync();
   }
 
-  //ASYNC QUEUE
+  // RUN $EVALASYNC QUEUE STUFF NOW
   do {
     while (this.$$asyncQueue.length) {
       try {
@@ -117,7 +129,7 @@ Scope.prototype.$digest = function () { //TODO: combine $$digestOnce and $$diges
       }
     }
 
-    //TODO: Create a test to see if $evalAsync and $applyAsync *Really* run at the beginning or the end of $digest. I think they run at the beginning. This is how it ends up being postponed. The $digest will finish completely, first. Then the $digest is run again by $evalAsync and $applyAsync (through $apply). This makes sure that any changes caused by $evalAsync or $applyAsync are $digested.
+    //$evalAsync and $applyAsync run at the beginning of $digest. This is how it ends up being postponed until other $digest tasks have been completed. The $digest will finish completely, first. Then the $digest is run again by $evalAsync and $applyAsync (through $apply). This makes sure that any changes caused by $evalAsync or $applyAsync are $digested.
 
     //REGULAR QUEUE
     dirty = this.$$digestOnce();
@@ -276,4 +288,78 @@ Scope.prototype.$$postDigest = function (fn) {
   } catch (e) {
     console.error(e);
   }
+};
+
+/**
+ *
+ * @param {Array} watchFns
+ * @param {Function} listenerFn
+ */
+Scope.prototype.$watchGroup = function(watchFns, listenerFn) {
+  var self = this;
+  var newValues = []; //alternative from book: 'new Array(watchFns.length);'
+  var oldValues = []; //alternative from book: 'new Array(watchFns.length);'
+  //TODO: Does either way of declaring these values matter? Is there any optimization to 'new Array(array.length)'?
+  var isRunScheduled = false;
+  var firstRun = true;
+  var destroyFunctions = [];
+  var shouldCall = false;
+
+  function watchGroupListener() {
+    if (firstRun === true) {
+      firstRun = false;
+      listenerFn(newValues, newValues, self);
+      isRunScheduled = false;
+    }
+    else if (firstRun === false) {
+      listenerFn(newValues, oldValues, self);
+    }
+    isRunScheduled = false;
+  }
+
+    // using map to collect all of the $watch functions' destroy closures in an array.
+  destroyFunctions = _.map(watchFns, function(element, iterator) {
+    return self.$watch(element, function(newValue, oldValue) {
+      newValues[iterator] = newValue;
+      oldValues[iterator] = oldValue;
+      if (isRunScheduled === false) {
+        isRunScheduled = true;
+        self.$evalAsync(watchGroupListener);
+      }
+    });
+  });
+
+/* My First Attempt at making sure the listenerFn runs at least once if there are no watchFn's
+  if(watchFns.length === 0) {
+    if (isRunScheduled === false) {
+      isRunScheduled = true;
+      self.$evalAsync(watchGroupListener);
+    }
+  }*/
+
+  /**
+   * This is a more optimized version, because we don't have to go through
+   * watchGroupListener's checks. If the length is 0. There's no reason to
+   * load up old and new values into arrays.
+   */
+  if(watchFns.length === 0) {
+    shouldCall = true;
+    self.$evalAsync(function () {
+      if (shouldCall === true) {
+        listenerFn(newValues, newValues, self);
+      }
+    });
+    return function () {
+      shouldCall = false; //if there are no watchFn's and we run the de-register, it won't run once
+    };
+  }
+
+  // when we run the function that gets returned by $watchGroup it will destroy each
+  // watcher one-by-one using forEach.
+  return function () {
+    _.forEach(destroyFunctions, function (destroyFunction) {
+      destroyFunction();
+    });
+  };
+
 };
