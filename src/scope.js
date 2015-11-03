@@ -20,6 +20,8 @@ function Scope() {
   this.$$applyAsyncQueue = [];
   this.$$applyAsyncId = null;
   this.$$postDigestQueue = [];
+  this.$root = this;
+  this.$$children = [];
   this.$$phase = null;
 }
 
@@ -50,14 +52,14 @@ Scope.prototype.$watch = function (watchFn, listenerFn, valueEq) {
     last: initWatchVal
   };
   this.$$watchers.unshift(watcher);
-  this.$$lastDirtyWatch = null;
+  this.$root.$$lastDirtyWatch = null;
 
   //a function returned that will remove the applicable watcher when run.
   return function () {
     var index = self.$$watchers.indexOf(watcher);
     if(index >= 0) {
       self.$$watchers.splice(index, 1);
-      self.$$lastDirtyWatch = null;
+      self.$root.$$lastDirtyWatch = null;
     }
   };
 };
@@ -71,43 +73,48 @@ Scope.prototype.$watch = function (watchFn, listenerFn, valueEq) {
  * @return {Boolean}
  */
 Scope.prototype.$$digestOnce = function () {
+  var dirty;
+  var continueLoop = true;
   var self = this;
-  var newValue, oldValue, dirty;
+  this.$$everyScope(function (scope) {
+    var newValue, oldValue;
+    _.forEachRight(scope.$$watchers, function (watcher) {
 
-  _.forEachRight(this.$$watchers, function (watcher) {
+      try {
+        if (!!watcher === true) {
+          newValue = watcher.watchFn(scope);
+          oldValue = watcher.last;
 
-    try {
-      if (!!watcher === true) {
-        newValue = watcher.watchFn(self);
-        oldValue = watcher.last;
+          if (!scope.$$areEqual(newValue, oldValue, watcher.valueEq)) {
+            self.$root.$$lastDirtyWatch = watcher;
+            watcher.last = watcher.valueEq === true ? _.cloneDeep(newValue) : newValue;
+            watcher.listenerFn(newValue,
+              oldValue === initWatchVal ? newValue : oldValue,
+              scope);
+            dirty = true;
+          }
+          else if (self.$root.$$lastDirtyWatch === watcher) {
+            continueLoop = false;
+            return false;
+          }
+        } //end of if (watcher)
+      } //end of try
 
-        if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
-          self.$$lastDirtyWatch = watcher;
-          watcher.last = watcher.valueEq === true ? _.cloneDeep(newValue) : newValue;
-          watcher.listenerFn(newValue,
-            oldValue === initWatchVal ? newValue : oldValue,
-            self);
-          dirty = true;
-        }
-        else if (self.$$lastDirtyWatch === watcher) {
-          return false;
-        }
-      } //end of if (watcher)
-    } //end of try
+      catch (e) {
+        console.error(e);
+      }
+    }); //end foreEachRight
+    return continueLoop;
+  }); //end $$everyScope
 
-    catch (e) {
-      console.error(e);
-    }
-  });
   return dirty;
-
 }; //end $$digestOnce
 
 Scope.prototype.$digest = function () { //TODO: combine $$digestOnce and $$digest in one function
   var timeToLive = 7; // "The ttl" ...for how long two watchFn's can call each other before it throws
   var dirty, asyncTask;
 
-  this.$$lastDirtyWatch = null;
+  this.$root.$$lastDirtyWatch = null;
   this.$beginPhase("$digest"); // UPDATE $$PHASE
 
   // RUN $APPLYASYNC QUEUED STUFF NOW
@@ -200,7 +207,7 @@ Scope.prototype.$apply = function(expr) {
   }
   finally {
     this.$clearPhase();
-    this.$digest();
+    this.$root.$digest();
   }
 };
 
@@ -219,7 +226,7 @@ Scope.prototype.$evalAsync = function (expr) {
   if(!self.$$phase && self.$$asyncQueue.length === 0) {
     setTimeout(function () {
       if (self.$$asyncQueue.length > 0) {
-        self.$digest();
+        self.$root.$digest();
       }
     }, 0);
   }
@@ -362,4 +369,37 @@ Scope.prototype.$watchGroup = function(watchFns, listenerFn) {
     });
   };
 
+};
+
+Scope.prototype.$new = function () {
+  var child;
+  var ChildScope = function() { };
+
+  ChildScope.prototype = this;
+  child = new ChildScope();
+  this.$$children.push(child); // this adds the child to its parent scope, so the parent can run the digest on its children, as well as itself. $$childern can be ultimately found on the rootScope.
+
+  child.$$watchers = []; // this is called "attribute shadowing" it does not overwrite the parent $$watchers
+  child.$$children = []; // this is the child's collection of children which it will $digest whenever the $digest is run on itself
+
+  return child;
+
+};
+// TODO revise $new to use Object.create(this) instead
+
+/**
+ *
+ * @param {Function} fn
+ * @returns {boolean}
+ */
+Scope.prototype.$$everyScope = function (fn) {
+  // we run only if the function itself returns something (truthy)
+  if (fn(this)) { // this is to test if the function has a scope with it as the first argument. This is basically the pattern we have for watchFn's.
+    return this.$$children.every(function (child) { // this.$$children is the array to run 'Array.prototype.every' on
+      return child.$$everyScope(fn);
+    });
+  }
+  else {
+      return false;
+    }
 };

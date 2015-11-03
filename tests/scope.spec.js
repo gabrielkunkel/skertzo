@@ -1013,6 +1013,182 @@ describe("The $scope object class", function() {
 
     }); //end it
 
-  }); //end describe
+  }); //end describe "$watchGroup"
 
-});
+  describe("Regarding inheritance...", function() {
+    
+    it("the child does inherit the parent's properties", function() {
+      var parent = new Scope();
+      var child = parent.$new();
+
+      parent.aValue = [1, 2, 3];
+
+
+      expect(child.aValue).toEqual([1, 2, 3]);
+    }); //end it
+
+    it("the parent does NOT inherit the child's properties", function() {
+      var parent = new Scope();
+      var child = parent.$new();
+
+      child.aValue = ['flying', 'circus'];
+
+
+      expect(parent.aValue).not.toEqual(['flying', 'circus']);
+      expect(parent.aValue).toBeUndefined();
+
+    }); //end it
+
+    it("the child can manipulate a parent scope's property", function() {
+      var parent = new Scope();
+      var child = parent.$new();
+
+      parent.aValue = [1, 2, 3];
+
+      child.aValue.push(4);
+
+      expect(child.aValue).toEqual([1, 2, 3, 4]);
+      expect(parent.aValue).toEqual([1, 2, 3, 4]);
+    }); //end it
+
+    it("the child can watch a property in the parent", function() {
+      var parent = new Scope();
+      var child = parent.$new();
+
+      parent.aValue = [1, 2, 3];
+      child.counter = 0;
+      
+      child.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.counter += 1; },
+        true
+      );
+
+      child.$digest();
+      expect(child.counter).toBe(1);
+
+      parent.aValue.push(4);
+      child.$digest();
+      
+      //expect(child.aValue).toBe([1, 2, 3, 4]); //this doesn't pass because the newly created array object does not occupy the same memory space as child.aValue.
+      expect(child.aValue).toEqual([1, 2, 3, 4]); // this passes though
+      expect(child.counter).toBe(2);
+      expect(child.aValue).toBe(parent.aValue); // They are the same
+
+    }); //end it
+    
+    it("children can be nested at any depth", function() {
+      var a = new Scope();
+      var aa = a.$new();
+      var aaa = aa.$new(); //use object multiple times to create different objects
+      var aab = aa.$new();
+
+      var ab = a.$new(); // double-check parent to child but NO child to parent
+      var abb = ab.$new();
+
+      a.value = 1;
+
+      expect(aa.value).toBe(1);
+      expect(aaa.value).toBe(1);
+      expect(aab.value).toBe(1);
+      expect(ab.value).toBe(1);
+      expect(abb.value).toBe(1);
+
+      ab.anotherValue = 2; // change child to see how it impacts the parent
+
+      expect(abb.anotherValue).toBe(2);
+      expect(aa.anotherValue).toBeUndefined();
+      expect(aaa.anotherValue).toBeUndefined();
+    }); //end it
+
+    it("a child or children do not digest their parent(s)", function() {
+      var parent = new Scope();
+      var child = parent.$new();
+
+      parent.aValue = 'The Larch';
+
+      parent.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) {
+          scope.aValueWas = newValue;
+        }
+      );
+
+      child.$digest();
+      expect(child.aValueWas).toBeUndefined();
+    }); //end it
+    
+    it("a scope keeps record of its children", function() {
+      var parent = new Scope();
+      var child1 = parent.$new();
+      var child2 = parent.$new();
+      var childOfChild2 = child2.$new();
+
+      expect(parent.$$children.length).toBe(2);
+      expect(parent.$$children[0]).toBe(child1);
+      expect(parent.$$children[1]).toBe(child2);
+
+      expect(child1.$$children.length).toBe(0);
+      expect(child2.$$children.length).toBe(1);
+      expect(child2.$$children[0]).toBe(childOfChild2);
+    }); //end it
+    
+    it("each parent digests their children", function() {
+      var parent = new Scope();
+      var child = parent.$new();
+
+      parent.aValue = 'Owl Stretching Time';
+
+      child.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.aValueWas = newValue; }
+      );
+      
+      parent.$digest();
+      expect(child.aValueWas).toBe('Owl Stretching Time');
+
+    }); //end it
+
+    it("digests from root on $apply", function() {
+      var parent = new Scope();
+      var child = parent.$new();
+      var child2 = child.$new();
+
+      parent.aValue = 'Next... I eat the banana!';
+      parent.counter = 0;
+
+      parent.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.counter += 1; }
+      );
+
+      child2.$apply(function(scope) { });
+
+      expect(parent.counter).toBe(1);
+    }); //end it
+
+    it("schedules a digest from root on $evalAysnc", function(done) {
+      var parent = new Scope();
+      var child = parent.$new();
+      var child2 = child.$new();
+
+      parent.aValue = 'Next... I eat the banana!';
+      parent.counter = 0;
+
+      parent.$watch(
+        function(scope) { return scope.aValue; },
+        function(newValue, oldValue, scope) { scope.counter += 1; }
+      );
+
+      child2.$evalAsync(function (scope) { });
+
+      setTimeout(function () {
+        expect(parent.counter).toBe(1);
+        done();
+      }, 50);
+    }); //end it
+
+
+  }); //end describe "inheritance"
+
+}); //end describe "Scope"
