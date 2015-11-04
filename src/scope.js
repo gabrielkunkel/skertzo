@@ -1,6 +1,9 @@
 /**
  * Created by gabrielkunkel on 10/21/15.
  */
+
+/* global _ */ //this makes it so that eslint doesn't object to lodash's '_', since it hasn't been defined here, but is a library
+
 "use strict";
 
 // this is just a plain, useless, empty function to be used as a value placeholder
@@ -20,8 +23,9 @@ function Scope() {
   this.$$applyAsyncQueue = [];
   this.$$applyAsyncId = null;
   this.$$postDigestQueue = [];
-  this.$root = this;
+  this.$root = this; //this is used to "poke a hole" in isolated child scopes
   this.$$children = [];
+  this.$$listeners = {};
   this.$$phase = null;
 }
 
@@ -119,8 +123,8 @@ Scope.prototype.$digest = function () { //TODO: combine $$digestOnce and $$diges
 
   // RUN $APPLYASYNC QUEUED STUFF NOW
 
-  if (this.$$applyAsyncId) {
-    clearTimeout(this.$$applyAsyncId);
+  if (this.$root.$$applyAsyncId) {
+    clearTimeout(this.$root.$$applyAsyncId);
     this.$$flushApplyAsync();
   }
 
@@ -212,7 +216,7 @@ Scope.prototype.$apply = function(expr) {
 };
 
 /**
- * @kind Method
+ *
  * @description Schedules a function to run at the end of all other $digest operations.
  * It can schedule a $digest run, if one isn't ongoing. The preferred way to do this in
  * production code is to use $applyAsync.
@@ -265,11 +269,11 @@ Scope.prototype.$applyAsync = function (expr) {
     self.$eval(expr);
   });
 
-  //if there's NOTHING in $$applyAsyncId, add an $apply, wrapped in a setTimeout
+  //if there's NOTHING in $root.$$applyAsyncId, add an $apply, wrapped in a setTimeout
   //this $apply will only run in $digest and the Timeout will be cleared before
   //it has a chance to initialize.
-  if (self.$$applyAsyncId === null) {
-    self.$$applyAsyncId = setTimeout(function() {
+  if (self.$root.$$applyAsyncId === null) {
+    self.$root.$$applyAsyncId = setTimeout(function() {
       self.$apply(_.bind(self.$$flushApplyAsync, self));
     }, 0);
   }
@@ -286,7 +290,7 @@ Scope.prototype.$$flushApplyAsync = function () {
       console.error(e);
     }
   }
-  this.$$applyAsyncId = null;
+  this.$root.$$applyAsyncId = null;
 };
 
 Scope.prototype.$$postDigest = function (fn) {
@@ -371,21 +375,37 @@ Scope.prototype.$watchGroup = function(watchFns, listenerFn) {
 
 };
 
-Scope.prototype.$new = function () {
-  var child;
-  var ChildScope = function() { };
+/**
+ *
+ * @param {Boolean} isolated
+ * @returns {*}
+ */
+Scope.prototype.$new = function (isolated, parent) {
+  var child, ChildScope;
 
-  ChildScope.prototype = this;
-  child = new ChildScope();
-  this.$$children.push(child); // this adds the child to its parent scope, so the parent can run the digest on its children, as well as itself. $$childern can be ultimately found on the rootScope.
+  parent = parent || this; //we'll use "parent" as a way of submitting a separate scope for $digest to run down. This way we can have a number of "top scopes" or "parent scopes."
 
+  if(isolated) {
+    child = new Scope();
+    child.$root = parent.$root;
+    child.$$asyncQueue = parent.$$asyncQueue;
+    child.$$postDigestQueue = parent.$$postDigestQueue;
+    child.$$applyAsyncQueue = parent.$$applyAsyncQueue;
+  }
+  else { // TODO revise $new to use Object.create(this) instead
+    ChildScope = function() { };
+    ChildScope.prototype = this;
+    child = new ChildScope();
+  }
+  parent.$$children.push(child); // this adds the child to its parent scope, so the parent can run the digest on its children, as well as itself. $$childern can be ultimately found on the rootScope.
   child.$$watchers = []; // this is called "attribute shadowing" it does not overwrite the parent $$watchers
   child.$$children = []; // this is the child's collection of children which it will $digest whenever the $digest is run on itself
+  child.$$listeners = {}; // this gives the child its own listeners for receiving $broadcast and $emit
+  child.$parent = parent;
 
   return child;
 
 };
-// TODO revise $new to use Object.create(this) instead
 
 /**
  *
@@ -402,4 +422,146 @@ Scope.prototype.$$everyScope = function (fn) {
   else {
       return false;
     }
+};
+
+Scope.prototype.$destroy = function () {
+  var siblings, indexOfThis;
+
+  if(this.$parent) {
+    siblings = this.$parent.$$children;
+    indexOfThis = siblings.indexOf(this);
+    if (indexOfThis >= 0) {
+      siblings.splice(indexOfThis, 1);
+    }
+  }
+  this.$$watchers = null;
+};
+
+/**
+ *
+ * @param {Function} watchFn
+ * @param {Function} listenerFn
+ */
+Scope.prototype.$watchCollection = function(watchFn, listenerFn) {
+  var self = this;
+  var internalWatchFn, internalListenerFn;
+  var newValue, oldValue;
+  var objectOldLength;
+  var veryOldValue;
+  var trackVeryOldValue = listenerFn.length > 1;
+  var changeCount = 0;
+  var firstRun = true;
+
+  internalWatchFn = function (scope) {
+    /* eslint no-empty: 0 */
+    var objectNewLength;
+
+    newValue = watchFn(scope);
+
+    if (_.isObject(newValue)) { // this prevents strings from passing, since JavaScript strings are not objects
+      if (_.isArrayLike(newValue)) { // _.isArray only checks for proper arrays and does NOT check for array-like objects, including arguments and NodeList.
+        if(!_.isArray(oldValue)) {
+          changeCount += 1;
+          oldValue = [];
+        }
+        if (newValue.length !== oldValue.length) {
+          changeCount += 1;
+          oldValue.length = newValue.length; // TODO: Why must we "sync the new length tour internal oldValue array?" ...instead of having the one equal the other, like in $digest?
+        }
+        _.forEach(newValue, function (newItem, i) {
+          var bothNaN = _.isNaN(newItem) && _.isNaN(oldValue[i]);
+          if (!bothNaN && newItem !== oldValue[i]) {
+            changeCount += 1;
+            oldValue[i] = newItem;
+          }
+        });
+      }
+      else {
+        //take note if the oldValue isn't an object or was just an array (resets everything)
+        if (!_.isObject(oldValue) || _.isArrayLike(oldValue)) { //must regard that it could have been an array, since arrays are objects in JavaScript
+          changeCount += 1;
+          oldValue = {};
+          objectOldLength = 0;
+        }
+        objectNewLength = 0; //reset the NewLength
+
+
+        _.forOwn(newValue, function (newVal, key) { //_.forOwn has key instead of iterator
+          var bothNaN;
+          objectNewLength += 1;
+          if (oldValue.hasOwnProperty(key)) {
+            bothNaN = _.isNaN(newVal) && _.isNaN(oldValue[key]);
+            if (!bothNaN && oldValue[key] !== newVal) {
+              changeCount += 1;
+              oldValue[key] = newVal;
+            }
+          }
+          else {
+            changeCount += 1;
+            objectOldLength +=1;
+            oldValue[key] = newVal;
+          }
+        });
+        //TODO: See if we can change below to something that may just detect the amount of properties & methods. Could that be an optmization? Why or why not?
+        if (objectOldLength > objectNewLength) {
+          changeCount += 1;
+          _.forOwn(oldValue, function (oldVal, key) {
+            //this checks to see if a property that is on the oldValue object is no longer on the newValue object and, consequently, deletes it if it's missing.
+            if (!newValue.hasOwnProperty(key)) {
+              objectOldLength -= 1;
+              delete oldValue[key];
+            }
+          });
+        }
+      }
+    }
+
+    else {
+      if (!self.$$areEqual(newValue, oldValue, false)) {
+        changeCount += 1;
+      }
+      oldValue = newValue;
+    }
+
+    return changeCount;
+  };
+
+  internalListenerFn = function () {
+    if (!!firstRun === true) {
+      listenerFn(newValue, newValue, self);
+      firstRun = false;
+    }
+    else{
+      listenerFn(newValue, veryOldValue, self);
+    }
+
+    if (trackVeryOldValue) {
+      veryOldValue = _.clone(newValue);
+    }
+  };
+  //since this runs the $watch method and the $watch method returns a function that can be called to destroy the relevant watcher, this will also have that capability.
+  return this.$watch(internalWatchFn, internalListenerFn);
+};
+
+Scope.prototype.$on = function(eventName, listener) {
+  var listeners = this.$$listeners[eventName];
+
+  if (!listeners) {
+    this.$$listeners[eventName] = listeners = [];
+  }
+  listeners.push(listener);
+};
+
+Scope.prototype.$broadcast = function (eventName) {
+  var listeners = this.$$listeners[eventName] || [];
+  _.forEach(listeners, function (listener) {
+    listener();
+  });
+};
+
+Scope.prototype.$emit = function (eventName) {
+  var listeners = this.$$listeners[eventName] || [];
+  _.forEach(listeners, function (listener) {
+    listener();
+  });
 };

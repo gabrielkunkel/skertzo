@@ -9,6 +9,8 @@
 {
   //"parser": "babel-eslint",
 
+
+
   "ecmaFeatures": {
     "binaryLiterals": false,                    // enable binary literals
     "blockBindings": true,                     // enable let and const (aka block bindings)
@@ -38,15 +40,15 @@
     "prototypejs": false, // prototypejs global variables.
     "shelljs": false,     // shelljs global variables.
     "es6": false,   // enable all ECMAScript 6 features except for modules.
-     "commonjs": false
+    "commonjs": false
   },
 
   "globals": {
-    // e.g. "angular": true
+    "lodash": true
   },
 
   "plugins": [
-    // e.g. "react" (must run `npm install eslint-plugin-react` first)
+    "lodash3"
   ],
 
   "rules": {
@@ -225,6 +227,27 @@
     "max-params": 0,      // limits the number of parameters that can be used in the function declaration. (off by default)
     "max-statements": 0,  // specify the maximum number of statement allowed in a function (off by default)
     "no-bitwise": 0,      //use of bitwise operators (off by default)
-    "no-plusplus": 0      //use of unary operators, ++ and -- (off by default)
+    "no-plusplus": 0,      //use of unary operators, ++ and -- (off by default)
+
+    ////////////// LoDash Rules ////////////
+
+    "lodash3/prop-shorthand": 0,
+    "lodash3/matches-prop-shorthand": 0,
+    "lodash3/prefer-chain": 0,
+    "lodash3/preferred-alias": 0,
+    "lodash3/no-single-chain": 0,
+    "lodash3/prefer-reject": 0,
+    "lodash3/prefer-filter": 0,
+    "lodash3/no-unnecessary-bind": 0,
+    "lodash3/unwrap": 0,
+    "lodash3/prefer-compact": 0,
+    "lodash3/no-double-unwrap": 0,
+    "lodash3/prefer-map": 0,
+    "lodash3/prefer-wrapper-method": 0,
+    "lodash3/prefer-invoke": 0,
+    "lodash3/prefer-thru": 0,
+    "lodash3/prefer-lodash-method": 0, // use lodash methods over native Js ones
+    "lodash3/prefer-lodash-typecheck": 0,
+    "lodash3/no-commit": 0
   }
 }
