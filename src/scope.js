@@ -414,7 +414,7 @@ Scope.prototype.$new = function (isolated, parent) {
  */
 Scope.prototype.$$everyScope = function (fn) {
   // we run only if the function itself returns something (truthy)
-  if (fn(this)) { // this is to test if the function has a scope with it as the first argument. This is basically the pattern we have for watchFn's.
+  if (fn(this)) { // do all of the side effects run while in an if expression? // TODO: See if a function runs all side effects while it's in an if expression.
     return this.$$children.every(function (child) { // this.$$children is the array to run 'Array.prototype.every' on
       return child.$$everyScope(fn);
     });
@@ -427,6 +427,8 @@ Scope.prototype.$$everyScope = function (fn) {
 Scope.prototype.$destroy = function () {
   var siblings, indexOfThis;
 
+  this.$broadcast('$destroy');
+
   if(this.$parent) {
     siblings = this.$parent.$$children;
     indexOfThis = siblings.indexOf(this);
@@ -435,6 +437,7 @@ Scope.prototype.$destroy = function () {
     }
   }
   this.$$watchers = null;
+  this.$$listeners = {};
 };
 
 /**
@@ -543,6 +546,19 @@ Scope.prototype.$watchCollection = function(watchFn, listenerFn) {
   return this.$watch(internalWatchFn, internalListenerFn);
 };
 
+/**
+ * @description looks up the eventName key on the $$listeners object,
+ * if there are no listeners on the key yet it creates an array to hold all of the listeners,
+ * then it adds the listener to the array. This will look something like this:
+ *
+ * $$listeners = {
+ *  "eventName" : [listener1, listener2],
+ *  "otherEvent" : [listener3]
+ * }
+ *
+ * @param {String} eventName
+ * @param listener
+ */
 Scope.prototype.$on = function(eventName, listener) {
   var listeners = this.$$listeners[eventName];
 
@@ -550,18 +566,88 @@ Scope.prototype.$on = function(eventName, listener) {
     this.$$listeners[eventName] = listeners = [];
   }
   listeners.push(listener);
+
+  return function () {
+    var listenerIndex = listeners.indexOf(listener);
+    if (listenerIndex >= 0) {
+      //instead of splicing out we'll replace it with null, so that nothing will be skipped
+      //listeners.splice(listenerIndex, 1);
+      listeners[listenerIndex] = null;
+    }
+  };
 };
 
 Scope.prototype.$broadcast = function (eventName) {
-  var listeners = this.$$listeners[eventName] || [];
-  _.forEach(listeners, function (listener) {
-    listener();
+  var event = {
+    name: eventName,
+    targetScope: this,
+    preventDefault: function () {
+      event.defaultPrevented = true;
+    }
+  };
+  var listenerArgs = [event].concat(_.rest(arguments));
+
+  this.$$everyScope(function (scope) {
+    event.currentScope = scope;
+    scope.$$fireEventOnScope(eventName, listenerArgs); // this should run when $$everyScope does the 'if(fn(this))' check?
+    return true; // any function we put into $$everyScope must return true unless we want to halt its recursive progress
   });
+  event.currentScope = null;
+  return event;
 };
 
 Scope.prototype.$emit = function (eventName) {
+  var propagationStopped = false;
+  var event = {
+    name: eventName,
+    targetScope: this,
+    stopPropagation: function () { //this makes it so that in any $on you just have to run event.stopPropagation() to prevent $emit from emitting to further parents
+      propagationStopped = true;
+    },
+    preventDefault: function () {
+      event.defaultPrevented = true;
+    }
+  };
+  var listenerArgs = [event].concat(_.rest(arguments));
+  var scope = this;
+
+  do {
+    event.currentScope = scope;
+    scope.$$fireEventOnScope(eventName, listenerArgs);
+    scope = scope.$parent;
+  } while (scope && !propagationStopped);
+  event.currentScope = null;
+
+  return event;
+};
+
+Scope.prototype.$$fireEventOnScope = function (eventName, listenerArgs) {
   var listeners = this.$$listeners[eventName] || [];
-  _.forEach(listeners, function (listener) {
-    listener();
-  });
+  var i = 0;
+
+  // this is my own solution to p. 171 in the book, but it doesn't remove the null even though it passes the test of concern
+  // if I added another test that insisted it would be removed the test would not pass
+/*  _.forEach(listeners, function (listener) {
+    if(listener !== null) {
+      listener.apply(null, listenerArgs);
+    }
+  });*/
+
+  // in while loops you can control the iterator (unlike for loops which is the basis of forEach
+  while (i < listeners.length) {
+    if (listeners[i] === null) {
+      listeners.splice(i, 1);
+    }
+    else {
+      // REMINDER: This 'apply' is NOT '$apply'
+      try {
+      listeners[i].apply(null, listenerArgs);
+      }
+      catch (e) {
+        console.error(e);
+      }
+      i += 1;
+    }
+  }
+  return event;
 };
