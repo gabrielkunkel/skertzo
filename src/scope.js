@@ -2,6 +2,8 @@
  * Created by gabrielkunkel on 10/21/15.
  */
 
+/* eslint-disable */
+
 /* global _ */ //this makes it so that eslint doesn't object to lodash's '_', since it hasn't been defined here, but is a library
 
 "use strict";
@@ -651,3 +653,5 @@ Scope.prototype.$$fireEventOnScope = function (eventName, listenerArgs) {
   }
   return event;
 };
+
+/* eslint-enable */
