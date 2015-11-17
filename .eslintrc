@@ -55,7 +55,7 @@
     ////////// Possible Errors //////////
     
     "comma-dangle": 2,         //trailing commas in object literals
-    "no-cond-assign": 2,          //assignment in conditional expressions
+    "no-cond-assign": 0,          //assignment in conditional expressions
     "no-console": 0,              //use of console (off by default in the node environment)
     "no-constant-condition": 2,   //use of constant expressions in conditions
     "no-control-regex": 2,        //control characters in regular expressions

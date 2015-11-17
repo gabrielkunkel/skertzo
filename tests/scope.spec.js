@@ -18,7 +18,7 @@
 
 "use strict";
 
-describe("The $scope object class", function() {
+xdescribe("The $scope object class", function() {
   
   it("can be constructed and used as an object", function() {
     var scope = new Scope();
