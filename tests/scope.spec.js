@@ -18,7 +18,7 @@
 
 "use strict";
 
-xdescribe("The $scope object class", function() {
+describe("The $scope object class", function() {
   
   it("can be constructed and used as an object", function() {
     var scope = new Scope();
@@ -261,6 +261,80 @@ xdescribe("The $scope object class", function() {
 
     }); //end it
 
+    it('accepts expressions for watch functions', function() {
+      var theValue;
+      scope.aValue = 42;
+      scope.$watch('aValue', function(newValue, oldValue, scope) {
+        theValue = newValue;
+      });
+      scope.$digest();
+      expect(theValue).toBe(42);
+    }); // end it
+
+    it('removes constant watches after first invocation', function() {
+      scope.$watch('[1, 2, 3]', function() {});
+      scope.$digest();
+      expect(scope.$$watchers.length).toBe(0);
+    });
+
+    it('accepts one-time watches', function() {
+      var theValue;
+      scope.aValue = 42;
+      scope.$watch('::aValue', function(newValue, oldValue, scope) {
+        theValue = newValue;
+      });
+      scope.$digest();
+      expect(theValue).toBe(42);
+    });
+
+    it('removes one-time watches after first invocation', function() {
+      scope.aValue = 42;
+      scope.$watch('::aValue', function() { });
+      scope.$digest();
+      expect(scope.$$watchers.length).toBe(0);
+    });
+
+    it('does not remove one-time-watches until value is defined', function() {
+      scope.$watch('::aValue', function() { });
+      scope.$digest();
+      expect(scope.$$watchers.length).toBe(1);
+      scope.aValue = 42;
+      scope.$digest();
+      expect(scope.$$watchers.length).toBe(0);
+    });
+
+    it('does not remove one-time-watches until value stays defined', function() {
+      scope.aValue = 42;
+      scope.$watch('::aValue', function() { });
+      var unwatchDeleter = scope.$watch('aValue', function() {
+        delete scope.aValue;
+      });
+      scope.$digest();
+      expect(scope.$$watchers.length).toBe(2);
+      scope.aValue = 42;
+      unwatchDeleter();
+      scope.$digest();
+      expect(scope.$$watchers.length).toBe(0);
+    });
+
+    it('does not remove one-time watches before all array items defined', function() {
+      scope.$watch('::[1, 2, aValue]', function() { }, true);
+      scope.$digest();
+      expect(scope.$$watchers.length).toBe(1);
+      scope.aValue = 3;
+      scope.$digest();
+      expect(scope.$$watchers.length).toBe(0);
+    });
+
+    it('does not remove one-time watches before all object vals defined', function() {
+      scope.$watch('::{a: 1, b: aValue}', function() { }, true);
+      scope.$digest();
+      expect(scope.$$watchers.length).toBe(1);
+      scope.aValue = 3;
+      scope.$digest();
+      expect(scope.$$watchers.length).toBe(0);
+    });
+
   });
 
   describe("scope's $eval", function() {
@@ -299,6 +373,11 @@ xdescribe("The $scope object class", function() {
       expect(result).toBe(44);
 
     }); //end it
+
+    it('accepts expressions in $eval', function() {
+      expect(scope.$eval('42')).toBe(42);
+    }); //end it
+
   }); //end describe
 
   describe("scope's $apply", function() {
@@ -413,6 +492,27 @@ xdescribe("The $scope object class", function() {
 
       expect(function() { scope.$digest(); }).toThrow();
     }); //end it
+
+    it('accepts expressions in $apply', function() {
+      scope.aFunction = _.constant(42);
+      expect(scope.$apply('aFunction()')).toBe(42);
+    });
+
+    it('accepts expressions in $evalAsync', function(done) {
+      var called;
+      scope.aFunction = function() {
+        called = true;
+      };
+
+      scope.$evalAsync('aFunction()');
+
+      scope.$$postDigest(function() {
+        expect(called).toBe(true);
+        done();
+      });
+    });
+
+
   }); //end describe
 
   describe("$$phase field", function() {
@@ -1707,6 +1807,18 @@ xdescribe("The $scope object class", function() {
 
       expect(oldValueGiven).toEqual({a: 1, b: 2});
     }); //end it
+
+    it('accepts expressions for watch functions', function() {
+      var theValue;
+      scope.aColl = [1, 2, 3];
+      scope.$watchCollection('aColl', function(newValue, oldValue, scope) {
+        theValue = newValue;
+      });
+      scope.$digest();
+      expect(theValue).toEqual([1, 2, 3]);
+    }); //end it
+
+
   }); //end describe $watchCollection
 
   describe("Events", function() {
@@ -2070,5 +2182,72 @@ xdescribe("The $scope object class", function() {
     }); //end it
 
   }); //end describe
+
+  describe("Input Tracking", function() {
+    var scope = {};
+
+    beforeEach(function () {
+      scope = new Scope();
+    });
+
+    it('does not re-evaluate an array if its contents do not change', function() {
+      var values = [];
+
+      scope.a = 1;
+      scope.b = 2;
+      scope.c = 3;
+
+      scope.$watch('[a, b, c]', function(value) {
+        values.push(value);
+      });
+
+      scope.$digest();
+      expect(values.length).toBe(1);
+      expect(values[0]).toEqual([1, 2, 3]);
+
+      scope.$digest();
+      expect(values.length).toBe(1);
+
+      scope.c = 4;
+      scope.$digest();
+      expect(values.length).toBe(2);
+      expect(values[1]).toEqual([1, 2, 4]);
+    });
+
+
+  }); //end describe
+
+  describe("filters $statefulness", function() {
+    var scope = {};
+
+    beforeEach(function () {
+      scope = new Scope();
+    });
+
+    it("allows $stateful filter value to change over time", function(done) {
+
+      register('withTime', function () {
+        return _.extend(function (v) {
+          return new Date().toISOString() + ': ' + v;
+        }, {
+          $stateful: true
+        });
+      });
+
+      var listenerSpy = jasmine.createSpy();
+      scope.$watch('42 | withTime', listenerSpy);
+      scope.$digest();
+      var firstValue = listenerSpy.calls.mostRecent().args[0];
+
+      setTimeout(function() {
+        scope.$digest();
+        var secondValue = listenerSpy.calls.mostRecent().args[0];
+        expect(secondValue).not.toEqual(firstValue);
+        done();
+      }, 100);
+
+    }); // end it
+
+  }); // end describe $stateful filters
 
 }); //end describe "Scope"

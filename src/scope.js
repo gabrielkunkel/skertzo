@@ -45,6 +45,12 @@ function Scope() {
 Scope.prototype.$watch = function (watchFn, listenerFn, valueEq) {
   var self = this;
 
+  watchFn = parse(watchFn);
+
+  if (watchFn.$$watchDelegate) {
+    return watchFn.$$watchDelegate(self, listenerFn, valueEq, watchFn);
+  }
+
   /**
    * @property {Object} watcher - Will be added to the scope's $$watchers array
    * @property {Function} watcher.watchFn - Pertains to one value on the scope.
@@ -199,11 +205,11 @@ Scope.prototype.$$areEqual = function (newValue, oldValue, valueEq) {
  * as an argument.
  *
  * @param {Function} expr
- * @param optionalArg
+ * @param locals
  * @returns {*}
  */
-Scope.prototype.$eval = function (expr, optionalArg) {
-   return expr(this, optionalArg);
+Scope.prototype.$eval = function (expr, locals) {
+   return parse(expr)(this, locals);
 };
 
 Scope.prototype.$apply = function(expr) {
@@ -456,6 +462,8 @@ Scope.prototype.$watchCollection = function(watchFn, listenerFn) {
   var trackVeryOldValue = listenerFn.length > 1;
   var changeCount = 0;
   var firstRun = true;
+
+  watchFn = parse(watchFn);
 
   internalWatchFn = function (scope) {
     /* eslint no-empty: 0 */

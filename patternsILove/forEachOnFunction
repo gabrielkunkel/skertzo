@@ -1,0 +1,7 @@
+The idea here is that the array which we run forEach on, can first
+be processed by a function with an array that is "held data" for
+the program.
+
+_.forEach(getInputs(ast.body), function (input) {
+
+  });

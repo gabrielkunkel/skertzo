@@ -1,6 +1,6 @@
 'use strict';
 
-/* global _ */
+/* global _, OPERATORS */
 /* eslint no-use-before-define: 0 */
 
 /*****************************************/

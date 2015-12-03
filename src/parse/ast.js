@@ -18,6 +18,7 @@
  8. Logical OR expressions: a || b.
  9. Ternary expressions: a ? b : c.
  10. Assignments: a = b.
+ 11. Filters: a | filter
 
  */
 
@@ -57,7 +58,7 @@ AST.prototype.program = function () {
   var body = [], notReturnedYet = true;
   while (notReturnedYet) {
     if (this.tokens.length) {
-      body.push(this.assignment());
+      body.push(this.filter());
     }
     if (!this.expect(';')) {
       return { type: AST.Program, body: body };
@@ -84,7 +85,7 @@ AST.prototype.primary = function () {
 
   // for altering the order of precedenc
   if (this.expect('(')) {
-    primary = this.assignment();
+    primary = this.filter();
     this.consume(')');
   }
 
@@ -276,6 +277,23 @@ AST.prototype.assignment = function () {
       left: left,
       right: right
     };
+  }
+  return left;
+};
+
+AST.prototype.filter = function () {
+  var args, left = this.assignment();
+  while (this.expect('|')) {
+    args = [left];
+    left = {
+      type: AST.CallExpression,
+      callee: this.identifier(),
+      arguments: args,
+      filter: true
+    };
+    while (this.expect(':')) {
+      args.push(this.assignment());
+    }
   }
   return left;
 };

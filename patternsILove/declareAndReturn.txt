@@ -1,0 +1,17 @@
+  var lastResult;
+
+  return scope.$watch(function () {
+    var changed = false;
+    _.forEach(inputExpressions, function (inputExpr, i) {
+      var newValue = inputExpr(scope);
+      if (changed || !expressionInputDirtyCheck(newValue, oldValues[i])) {
+        changed = true;
+        oldValues[i] = newValue;
+      }
+    });
+    if (changed) {
+      lastResult = watchFn(scope);
+    }
+    return lastResult;
+
+  }, listenerFn, valueEq);
